@@ -5,6 +5,7 @@ import { ZodError } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { registerFetchRoutes } from './routes/fetch.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerMaintenanceRoutes } from './routes/maintenance.js';
 import { registerPostRoutes } from './routes/posts.js';
 import { registerPresetRoutes } from './routes/presets.js';
 import { registerRuleRoutes } from './routes/rules.js';
@@ -44,6 +45,7 @@ export const createServer = async () => {
   });
 
   registerHealthRoutes(app);
+  registerMaintenanceRoutes(app);
   registerFetchRoutes(app);
   registerPostRoutes(app);
   registerRuleRoutes(app);

@@ -58,6 +58,52 @@ export const registerFetchRoutes = (app: FastifyInstance) => {
     };
   });
 
+  app.get('/v1/fetch/summary', async (request) => {
+    const querySchema = z.object({
+      days: z.coerce.number().min(1).max(90).default(7)
+    });
+    const { days } = querySchema.parse(request.query);
+
+    const today = new Date();
+    const dayBuckets: Array<{ key: string; label: string; count: number }> = [];
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const day = new Date(today);
+      day.setDate(today.getDate() - i);
+      day.setHours(0, 0, 0, 0);
+      const key = day.toISOString().slice(0, 10);
+      const label = `${day.getMonth() + 1}.${day.getDate()}`;
+      dayBuckets.push({ key, label, count: 0 });
+    }
+
+    const since = new Date();
+    since.setDate(today.getDate() - (days - 1));
+    since.setHours(0, 0, 0, 0);
+
+    const runs = await prisma.fetchRun.findMany({
+      where: { requestedAt: { gte: since } },
+      select: {
+        requestedAt: true,
+        _count: { select: { fetchedItems: true } }
+      }
+    });
+
+    const bucketMap = new Map(dayBuckets.map((bucket) => [bucket.key, bucket]));
+    let totalItems = 0;
+    runs.forEach((run) => {
+      const dayKey = new Date(run.requestedAt).toISOString().slice(0, 10);
+      const bucket = bucketMap.get(dayKey);
+      if (!bucket) return;
+      bucket.count += run._count.fetchedItems;
+      totalItems += run._count.fetchedItems;
+    });
+
+    return {
+      days: dayBuckets.map(({ key, label, count }) => ({ date: key, label, count })),
+      totalRuns: runs.length,
+      totalItems
+    };
+  });
+
   app.get('/v1/inbox', async (request) => {
     const querySchema = z.object({
       runId: z.string().min(1),

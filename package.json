@@ -9,6 +9,7 @@
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
     "verify": "pnpm -w type-check && pnpm -w lint && pnpm -w db:generate && pnpm --filter @tech-radar/summarizer test",
+    "badges:update": "node scripts/update-readme-badges.mjs",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d",

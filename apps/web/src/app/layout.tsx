@@ -23,6 +23,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <Link href="/sources">소스</Link>
               <Link href="/presets">프리셋</Link>
               <Link href="/rules">규칙</Link>
+              <Link href="/settings">관리</Link>
             </nav>
           </header>
           {children}

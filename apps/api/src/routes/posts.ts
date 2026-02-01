@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, Prisma } from '@tech-radar/db';
 import { LRUCache } from 'lru-cache';
-import { CategoryEnum, ContentTypeEnum, type ContentType } from '@tech-radar/shared';
+import { CategoryEnum, ContentTypeEnum, SignalsEnum, type ContentType } from '@tech-radar/shared';
 import { summarize } from '@tech-radar/summarizer';
 
 export const registerPostRoutes = (app: FastifyInstance) => {
@@ -53,14 +53,17 @@ export const registerPostRoutes = (app: FastifyInstance) => {
           update: {
             savedAt: new Date()
           },
-          create: {
-            category: item.category,
-            sourceId: item.sourceId ?? null,
-            contentType: summary.contentType,
-            summaryTemplateVersion: summary.summaryTemplateVersion,
-            title: item.title,
-            url: item.url,
-            publishedAt: item.publishedAt,
+      create: {
+        category: item.category,
+        sourceId: item.sourceId ?? null,
+        contentType: summary.contentType,
+        summaryTemplateVersion: summary.summaryTemplateVersion,
+        collection: null,
+        status: 'inbox',
+        pinned: false,
+        title: item.title,
+        url: item.url,
+        publishedAt: item.publishedAt,
             summaryTldr: summary.summaryTldr,
             summaryPoints: summary.summaryPoints,
             signals: summary.signals,
@@ -95,20 +98,64 @@ export const registerPostRoutes = (app: FastifyInstance) => {
     const querySchema = z.object({
       limit: z.coerce.number().min(1).max(100).default(50),
       cursor: z.string().optional(),
-      category: CategoryEnum.optional()
+      category: CategoryEnum.optional(),
+      contentType: ContentTypeEnum.optional(),
+      signal: SignalsEnum.optional(),
+      q: z.string().optional(),
+      sort: z.enum(['asc', 'desc']).optional(),
+      status: z.string().optional(),
+      collection: z.string().optional(),
+      pinnedOnly: z.string().optional(),
+      lookbackDays: z.coerce.number().min(1).max(3650).optional()
     });
 
-    const { limit, cursor, category } = querySchema.parse(request.query);
+    const { limit, cursor, category, contentType, signal, q, sort, status, collection, pinnedOnly, lookbackDays } =
+      querySchema.parse(request.query);
     const where: Record<string, unknown> = {};
     if (category) where.category = category;
+    if (contentType) where.contentType = contentType;
+    if (status) where.status = status;
+    if (collection) {
+      where.collection = { contains: collection, mode: 'insensitive' };
+    }
+    if (pinnedOnly === 'true') where.pinned = true;
+    if (signal) {
+      where.signals = { array_contains: [signal] };
+    }
+    if (q) {
+      where.OR = [
+        { title: { contains: q, mode: 'insensitive' } },
+        { summaryTldr: { contains: q, mode: 'insensitive' } },
+        { url: { contains: q, mode: 'insensitive' } },
+        { notes: { contains: q, mode: 'insensitive' } }
+      ];
+    }
 
-    const cacheKey = JSON.stringify({ limit, cursor, category });
+    if (lookbackDays) {
+      const since = new Date();
+      since.setDate(since.getDate() - lookbackDays);
+      where.savedAt = { gte: since };
+    }
+
+    const cacheKey = JSON.stringify({
+      limit,
+      cursor,
+      category,
+      contentType,
+      signal,
+      q,
+      sort,
+      status,
+      collection,
+      pinnedOnly,
+      lookbackDays
+    });
     const cached = listCache.get(cacheKey);
     if (cached) return cached;
 
     const posts = await prisma.post.findMany({
       where,
-      orderBy: { savedAt: 'desc' },
+      orderBy: { savedAt: sort ?? 'desc' },
       take: limit + 1,
       ...(cursor
         ? {
@@ -160,7 +207,10 @@ export const registerPostRoutes = (app: FastifyInstance) => {
     const bodySchema = z.object({
       contentType: ContentTypeEnum.optional(),
       tags: z.array(z.string()).optional(),
-      notes: z.string().nullable().optional()
+      notes: z.string().nullable().optional(),
+      status: z.string().optional(),
+      collection: z.string().nullable().optional(),
+      pinned: z.boolean().optional()
     });
 
     const { id } = paramsSchema.parse(request.params);
@@ -172,11 +222,13 @@ export const registerPostRoutes = (app: FastifyInstance) => {
       return reply.status(404).send({ error: 'NotFound', message: 'post not found' });
     }
 
-    let updateData: Record<string, unknown> = {
-      tags: body.tags,
-      notes: body.notes,
-      contentType: body.contentType
-    };
+    let updateData: Record<string, unknown> = {};
+    if (Object.prototype.hasOwnProperty.call(body, 'tags')) updateData.tags = body.tags;
+    if (Object.prototype.hasOwnProperty.call(body, 'notes')) updateData.notes = body.notes;
+    if (body.contentType) updateData.contentType = body.contentType;
+    if (body.status) updateData.status = body.status;
+    if (Object.prototype.hasOwnProperty.call(body, 'collection')) updateData.collection = body.collection;
+    if (Object.prototype.hasOwnProperty.call(body, 'pinned')) updateData.pinned = body.pinned;
 
     if (regenerateSummary === 'true') {
       const rawSnapshot = (post.rawSnapshot ?? {}) as Record<string, unknown>;

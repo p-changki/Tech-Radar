@@ -340,11 +340,15 @@ function summarizeNews(input: SummarizeInput, signals: Signal[]): SummaryOutput 
   const keywords = extractKeywords(`${input.title} ${snippet}`);
   const whyItMatters = buildWhyItMatters(signals, keywords);
   const suggestedTags = buildSuggestedTags({ keywords, signals });
-  const points = [
+  let points = [
     truncate(`변경점: ${input.title}${snippet ? ` - ${snippet}` : ''}`, 160),
     `중요성: ${whyItMatters}`,
     `읽기 포인트: ${keywords.length ? keywords.join(', ') : '핵심 키워드 확인'}`
   ];
+  points = removeOverlappingPoints(dedupePoints(points), tldr);
+  if (points.length < 3 && keywords.length) {
+    points = dedupePoints([...points, `핵심 키워드: ${keywords.slice(0, 5).join(', ')}`]);
+  }
 
   const wordCount = toTokenCandidates(snippet).length;
   const readingTimeSec = Math.max(30, Math.ceil(wordCount / 3.3));
@@ -378,12 +382,14 @@ function summarizeCompanyBlog(input: SummarizeInput, signals: Signal[]): Summary
   const structuredPoints = extractStructuredPoints(snippet);
   const sentences = sentenceSplit(snippet);
   const pointsBase = structuredPoints.length > 0 ? structuredPoints : sentences;
-  const points = pointsBase.slice(0, 5);
+  let points = dedupePoints(pointsBase.slice(0, 5));
 
   while (points.length < 3) {
     const keywords = extractKeywords(`${input.title} ${snippet}`, 3);
     if (!keywords.length) break;
-    points.push(`핵심 키워드: ${keywords.join(', ')}`);
+    const nextPoints = dedupePoints([...points, `핵심 키워드: ${keywords.join(', ')}`]);
+    if (nextPoints.length === points.length) break;
+    points = nextPoints;
   }
 
   const tldrBase = sentences.length >= 3 ? sentences.slice(0, 3).join(' ') : snippet || input.title;
@@ -394,6 +400,10 @@ function summarizeCompanyBlog(input: SummarizeInput, signals: Signal[]): Summary
   const stackHints = extractStackHints(`${input.title} ${snippet}`);
   const suggestedTags = buildSuggestedTags({ keywords, stackHints, signals });
 
+  points = removeOverlappingPoints(points, tldr);
+  if (points.length < 3 && keywords.length) {
+    points = fillPoints(points, 3, [`핵심 키워드: ${keywords.slice(0, 5).join(', ')}`]);
+  }
   const takeaways = points.filter((point) => /했다|했습니다|적용|개선|도입|구축|we |introduced|implemented/i.test(point));
 
   return {
@@ -448,7 +458,7 @@ function summarizeReleaseNote(input: SummarizeInput, signals: Signal[]): Summary
 
   const sectionPoints = extractReleaseSections(raw || snippet);
   const sentences = sentenceSplit(snippet);
-  const points = (sectionPoints.length > 0 ? sectionPoints : sentences).slice(0, 5);
+  let points = dedupePoints((sectionPoints.length > 0 ? sectionPoints : sentences).slice(0, 5));
 
   const migrationNotes = sentences.filter((sentence) => /migration|migrate|업그레이드|호환|마이그레이션/i.test(sentence));
 
@@ -460,6 +470,10 @@ function summarizeReleaseNote(input: SummarizeInput, signals: Signal[]): Summary
 
   const tldrCore = versionDetected ? `버전 ${versionDetected}` : '릴리즈 업데이트';
   const tldr = truncate(`${tldrCore} (${changeType}). ${sentences[0] ?? input.title}`, 250);
+  points = removeOverlappingPoints(points, tldr);
+  if (points.length < 2) {
+    points = fillPoints(points, 2, [`핵심 변경: ${input.title}`]);
+  }
   const keywords = extractKeywords(`${input.title} ${snippet}`);
   const whyItMatters = buildWhyItMatters(signals, keywords);
   const suggestedTags = buildSuggestedTags({ keywords, signals, versionDetected });
@@ -487,14 +501,12 @@ function summarizeOther(input: SummarizeInput, signals: Signal[]): SummaryOutput
   const tldrBase = sentences.length >= 2 ? sentences.slice(0, 2).join(' ') : snippet || input.title;
   const tldr = truncate(tldrBase, 250);
 
-  const points = sentences.slice(0, 3);
+  let points = removeOverlappingPoints(dedupePoints(sentences.slice(0, 3)), tldr);
   const keywords = extractKeywords(`${input.title} ${snippet}`);
   const suggestedTags = buildSuggestedTags({ keywords, signals });
 
-  while (points.length < 3) {
-    if (keywords.length === 0) break;
-    points.push(`키워드: ${keywords.join(', ')}`);
-    break;
+  if (points.length < 3 && keywords.length) {
+    points = fillPoints(points, 3, [`키워드: ${keywords.slice(0, 5).join(', ')}`]);
   }
 
   return {
@@ -530,6 +542,64 @@ export type SummaryOutput = {
   whyItMatters: string;
   summaryMeta: Record<string, unknown>;
 };
+
+function dedupePoints(points: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const point of points) {
+    const normalized = point.trim().toLowerCase();
+    if (!normalized) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(point.trim());
+  }
+  return result;
+}
+
+function fillPoints(points: string[], min: number, fillers: string[]): string[] {
+  let result = [...points];
+  for (const filler of fillers) {
+    if (result.length >= min) break;
+    result = dedupePoints([...result, filler]);
+  }
+  return result;
+}
+
+function normalizeForCompare(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tokenOverlapRatio(a: string, b: string): number {
+  const tokensA = normalizeForCompare(a).split(' ').filter(Boolean);
+  const tokensB = normalizeForCompare(b).split(' ').filter(Boolean);
+  if (tokensA.length === 0 || tokensB.length === 0) return 0;
+  const setA = new Set(tokensA);
+  const setB = new Set(tokensB);
+  let intersection = 0;
+  for (const token of setA) {
+    if (setB.has(token)) intersection += 1;
+  }
+  return intersection / Math.max(setA.size, setB.size);
+}
+
+function isTooSimilar(a: string, b: string): boolean {
+  const normA = normalizeForCompare(a);
+  const normB = normalizeForCompare(b);
+  if (!normA || !normB) return false;
+  if (normA === normB) return true;
+  if (normA.includes(normB) || normB.includes(normA)) return true;
+  return tokenOverlapRatio(normA, normB) >= 0.7;
+}
+
+function removeOverlappingPoints(points: string[], tldr: string): string[] {
+  const tldrSentences = sentenceSplit(tldr);
+  const candidates = tldrSentences.length > 0 ? tldrSentences : [tldr];
+  return points.filter((point) => !candidates.some((sentence) => isTooSimilar(point, sentence)));
+}
 
 export function summarize(input: SummarizeInput): SummaryOutput {
   const contentType = input.contentType ??

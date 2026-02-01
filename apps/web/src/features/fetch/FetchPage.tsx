@@ -1,19 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import type { Category } from '@tech-radar/shared';
 import { apiFetch } from '../../lib/api';
+import { CATEGORIES, CATEGORY_LABELS, LOOKBACK_OPTIONS } from '../../shared/constants/categories';
+import { getDomain } from '../../shared/lib/url';
 
-const categories: Category[] = ['AI', 'FE', 'BE', 'DEVOPS', 'DATA', 'SECURITY', 'OTHER'];
-const categoryLabels: Record<Category, string> = {
-  AI: 'AI',
-  FE: 'FE',
-  BE: 'BE',
-  DEVOPS: 'DEVOPS',
-  DATA: '데이터',
-  SECURITY: '보안',
-  OTHER: '기타'
-};
+const categories: Category[] = [...CATEGORIES];
+const categoryLabels: Record<Category, string> = CATEGORY_LABELS;
 
 type SourceStatus = {
   sourceId: string;
@@ -48,15 +43,6 @@ type Preset = {
   sourceCount?: number;
 };
 
-type Source = {
-  id: string;
-  name: string;
-  key: string;
-  categoryDefault: string;
-  locale: string;
-  enabled: boolean;
-};
-
 type FetchItemsResponse = {
   items: Array<{
     id: string;
@@ -73,7 +59,27 @@ type FetchItemsResponse = {
 
 type InboxItem = FetchItemsResponse['items'][number];
 
+const LOOKBACK_DAY_VALUES = LOOKBACK_OPTIONS
+  .filter((option) => option.value !== 'all')
+  .map((option) => Number(option.value))
+  .filter((value) => Number.isFinite(value) && value > 0);
+const LOOKBACK_SELECT_OPTIONS = LOOKBACK_OPTIONS.filter((option) => option.value !== 'all');
+
+const parseLimit = (value: string | null) => {
+  if (!value) return 0;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(5, Math.floor(parsed)));
+};
+
 export default function FetchPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initializedRef = useRef(false);
+  const step3Ref = useRef<HTMLDivElement>(null);
+  const presetFromQueryRef = useRef<string | null>(null);
+  const latestRunIdRef = useRef<string | null>(null);
+
   const [limits, setLimits] = useState<Record<Category, number>>({
     AI: 0,
     FE: 0,
@@ -87,14 +93,13 @@ export default function FetchPage() {
   const [lookbackDays, setLookbackDays] = useState<number>(7);
   const [mode, setMode] = useState<'real' | 'dummy'>('real');
   const [locale, setLocale] = useState<'ko' | 'en' | 'all'>('ko');
-  const [usePreset, setUsePreset] = useState(true);
   const [includeSeen, setIncludeSeen] = useState(false);
   const [htmlFallback, setHtmlFallback] = useState(true);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const [presets, setPresets] = useState<Preset[]>([]);
   const [presetId, setPresetId] = useState<string>('');
-  const [sources, setSources] = useState<Source[]>([]);
-  const [sourceQuery, setSourceQuery] = useState('');
-  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
+
   const [runId, setRunId] = useState<string | null>(null);
   const [runStatus, setRunStatus] = useState<FetchRunStatus | null>(null);
   const [showSourceStatus, setShowSourceStatus] = useState(false);
@@ -104,45 +109,107 @@ export default function FetchPage() {
   const [polling, setPolling] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<InboxItem | null>(null);
-  const latestRunIdRef = useRef<string | null>(null);
+
+  const flatItems = useMemo(() => Object.values(itemsByCategory).flat(), [itemsByCategory]);
+  const sortedItems = useMemo(() => {
+    return [...flatItems].sort(
+      (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+    );
+  }, [flatItems]);
 
   const selectedCount = selectedIds.size;
-  const flatItems = useMemo(() => Object.values(itemsByCategory).flat(), [itemsByCategory]);
-  const formatDate = (value: string) =>
-    new Date(value).toLocaleDateString('ko-KR', {
-      year: '2-digit',
-      month: '2-digit',
-      day: '2-digit'
-    });
   const totalRequested = useMemo(
     () => categories.reduce((sum, category) => sum + (limits[category] ?? 0), 0),
     [limits]
   );
+
   const allSameCount = useMemo(() => {
     const firstCategory = categories[0];
     if (!firstCategory) return false;
     const first = limits[firstCategory];
     return categories.every((category) => limits[category] === first);
   }, [limits]);
+
   const allCountValue = useMemo(() => {
     const firstCategory = categories[0];
     if (!firstCategory || !allSameCount) return 0;
     return limits[firstCategory];
   }, [allSameCount, limits]);
 
+  const formatDate = (value: string) =>
+    new Date(value).toLocaleDateString('ko-KR', {
+      year: '2-digit',
+      month: '2-digit',
+      day: '2-digit'
+    });
+
+  const getPreviewText = (item: InboxItem) => {
+    if (item.snippet && item.snippet.trim().length > 0) return item.snippet;
+    return `요약(제목 기반): ${item.title}`;
+  };
+
+  useEffect(() => {
+    if (initializedRef.current) return;
+    const nextLimits: Record<Category, number> = { ...limits };
+    categories.forEach((category) => {
+      const key = `limits${category}`;
+      nextLimits[category] = parseLimit(searchParams.get(key));
+    });
+
+    const hasAnyLimit = categories.some((category) => nextLimits[category] > 0);
+    if (!hasAnyLimit) {
+      nextLimits.AI = 5;
+      nextLimits.FE = 5;
+      nextLimits.BE = 5;
+      nextLimits.DEVOPS = 5;
+    }
+
+    const queryLookback = Number(searchParams.get('lookbackDays'));
+    if (LOOKBACK_DAY_VALUES.includes(queryLookback)) {
+      setLookbackDays(queryLookback);
+    }
+
+    const queryPreset = searchParams.get('presetId');
+    if (queryPreset) {
+      presetFromQueryRef.current = queryPreset;
+      setPresetId(queryPreset);
+    }
+
+    setLimits(nextLimits);
+    initializedRef.current = true;
+  }, [searchParams, limits]);
+
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    const params = new URLSearchParams();
+    params.set('lookbackDays', String(lookbackDays));
+    if (presetId) params.set('presetId', presetId);
+    categories.forEach((category) => {
+      const value = limits[category];
+      if (value > 0) params.set(`limits${category}`, String(value));
+    });
+    const queryString = params.toString();
+    router.replace(queryString ? `/fetch?${queryString}` : '/fetch', { scroll: false });
+  }, [lookbackDays, presetId, limits, router]);
+
   useEffect(() => {
     const loadPresets = async () => {
       const response = await apiFetch<{ presets: Preset[] }>('/v1/presets');
       const presetList = response.presets ?? [];
       setPresets(presetList);
+
+      const fromQuery = presetFromQueryRef.current;
+      if (fromQuery && presetList.some((preset) => preset.id === fromQuery)) {
+        setPresetId(fromQuery);
+        return;
+      }
+
       const defaultPreset = presetList.find((preset) => preset.isDefault);
       if (defaultPreset) {
         setPresetId(defaultPreset.id);
       } else if (presetList.length) {
         const firstPreset = presetList[0];
-        if (firstPreset) {
-          setPresetId(firstPreset.id);
-        }
+        if (firstPreset) setPresetId(firstPreset.id);
       }
     };
 
@@ -150,23 +217,6 @@ export default function FetchPage() {
       setMessage(error instanceof Error ? error.message : '프리셋을 불러오지 못했습니다.');
     });
   }, []);
-
-  useEffect(() => {
-    if (usePreset) return;
-
-    const timer = setTimeout(() => {
-      const query = new URLSearchParams();
-      if (sourceQuery) query.set('q', sourceQuery);
-      if (locale) query.set('locale', locale);
-      apiFetch<{ sources: Source[] }>(`/v1/sources?${query.toString()}`)
-        .then((response) => setSources(response.sources ?? []))
-        .catch((error) => {
-          setMessage(error instanceof Error ? error.message : '소스를 불러오지 못했습니다.');
-        });
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [usePreset, sourceQuery, locale]);
 
   const groupItems = (items: FetchItemsResponse['items']) => {
     const grouped: Record<string, FetchItemsResponse['items']> = {};
@@ -207,7 +257,11 @@ export default function FetchPage() {
 
   const runFetch = async () => {
     if (totalRequested === 0) {
-      setMessage('카테고리를 선택하고 개수를 지정해주세요.');
+      setMessage('카테고리별 개수를 지정해주세요.');
+      return;
+    }
+    if (!presetId) {
+      setMessage('프리셋을 선택해주세요.');
       return;
     }
     setLoading(true);
@@ -222,14 +276,9 @@ export default function FetchPage() {
         async: true,
         lookbackDays,
         htmlFallback,
-        includeSeen
+        includeSeen,
+        presetId
       };
-
-      if (usePreset) {
-        body.presetId = presetId || undefined;
-      } else {
-        body.sourceIds = Array.from(selectedSourceIds).slice(0, 50);
-      }
 
       const response = await apiFetch<{ runId: string }>('/v1/fetch/run', {
         method: 'POST',
@@ -238,6 +287,7 @@ export default function FetchPage() {
 
       setRunId(response.runId);
       setSelectedIds(new Set());
+      step3Ref.current?.scrollIntoView({ behavior: 'smooth' });
       await pollRun(response.runId);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '수집에 실패했습니다.');
@@ -258,26 +308,20 @@ export default function FetchPage() {
     });
   };
 
+  const selectAll = () => {
+    setSelectedIds(new Set(sortedItems.map((item) => item.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
   const openPreview = (item: InboxItem) => {
     setPreviewItem(item);
   };
 
   const closePreview = () => {
     setPreviewItem(null);
-  };
-
-  const toggleSourceSelection = (id: string) => {
-    setSelectedSourceIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else if (next.size < 50) {
-        next.add(id);
-      } else {
-        setMessage('한 번에 최대 50개 소스만 선택할 수 있습니다.');
-      }
-      return next;
-    });
   };
 
   const saveSelected = async () => {
@@ -298,12 +342,93 @@ export default function FetchPage() {
     }
   };
 
+  const savePreview = async () => {
+    if (!previewItem) return;
+    setLoading(true);
+    setMessage(null);
+    try {
+      await apiFetch('/v1/posts', {
+        method: 'POST',
+        body: JSON.stringify({ fetchedItemIds: [previewItem.id] })
+      });
+      setMessage('저장함에 보관했습니다.');
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(previewItem.id);
+        return next;
+      });
+      setPreviewItem(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '저장에 실패했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const summaryCounts = runStatus?.counts;
+  const totalItems = flatItems.length;
+  const sourceSuccess = summaryCounts?.sourceSuccess ?? 0;
+  const sourceFailures = summaryCounts?.sourceFailures ?? 0;
+  const sourceNotModified = summaryCounts?.sourceNotModified ?? 0;
+
+  const emptyReasons: string[] = [];
+  if (runStatus?.status === 'failed') {
+    emptyReasons.push('소스가 실패했습니다.');
+  } else if (totalItems === 0 && runStatus?.status === 'success') {
+    emptyReasons.push('기간 내 글이 부족하거나 중복 제거로 감소했습니다.');
+  }
+  if (!includeSeen) {
+    emptyReasons.push('이전에 본 글 제외 옵션이 영향을 줄 수 있습니다.');
+  }
+  if ((summaryCounts?.sourceFailures ?? 0) > 0) {
+    emptyReasons.push('일부 소스가 실패했습니다.');
+  }
+
   return (
     <div className="section">
-      <h2>크롤링</h2>
-      <div className="input-grid">
-        <label>
-          카테고리 선택
+      <h2>수집</h2>
+      {message && <div className="notice">{message}</div>}
+
+      <section className="section" style={{ marginTop: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0 }}>Step 1. 설정</h3>
+          <span className="muted">핵심 설정만 빠르게</span>
+        </div>
+
+        <div className="input-grid" style={{ marginTop: 12 }}>
+          <label>
+            기간
+            <select
+              value={String(lookbackDays)}
+              onChange={(event) => setLookbackDays(Number(event.target.value))}
+            >
+              {LOOKBACK_SELECT_OPTIONS.map((option) => (
+                <option key={option.value} value={String(option.value)}>
+                  {option.value === '1'
+                    ? '당일'
+                    : option.value === '7'
+                      ? '1주'
+                      : option.value === '30'
+                        ? '1달'
+                        : '6개월'}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            프리셋 선택
+            <select value={presetId} onChange={(event) => setPresetId(event.target.value)}>
+              {presets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.name} ({preset.sourceCount ?? 0})
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <label className="muted">카테고리별 개수</label>
           <div className="actions" style={{ marginTop: 6 }}>
             {(['ALL', ...categories] as Array<Category | 'ALL'>).map((category) => {
               const count = category === 'ALL' ? totalRequested : limits[category];
@@ -326,10 +451,7 @@ export default function FetchPage() {
               );
             })}
           </div>
-        </label>
-        <label>
-          {activeCategory === 'ALL' ? '전체' : activeCategory} 개수
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
             <select
               value={
                 activeCategory === 'ALL'
@@ -359,16 +481,16 @@ export default function FetchPage() {
                   [activeCategory]: nextValue
                 }));
               }}
-          >
-            <option value="" disabled>
-              선택
-            </option>
-            {[1, 2, 3, 4, 5].map((count) => (
-              <option key={count} value={count}>
-                {count}개
+            >
+              <option value="" disabled>
+                선택
               </option>
-            ))}
-          </select>
+              {[1, 2, 3, 4, 5].map((count) => (
+                <option key={count} value={count}>
+                  {count}개
+                </option>
+              ))}
+            </select>
             <button
               type="button"
               className="secondary"
@@ -393,241 +515,221 @@ export default function FetchPage() {
             >
               해제
             </button>
+            <span className="muted">총 {totalRequested}개 요청</span>
           </div>
-        </label>
-      </div>
-
-      <div className="actions" style={{ marginTop: 16 }}>
-        <button type="button" onClick={runFetch} disabled={loading || polling}>
-          {loading || polling ? '수집 중...' : '수집 실행'}
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          onClick={saveSelected}
-          disabled={loading || polling || selectedCount === 0}
-        >
-          선택 저장 ({selectedCount})
-        </button>
-      </div>
-
-      <div className="actions" style={{ marginTop: 12 }}>
-        <label className="muted" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="checkbox"
-            checked={mode === 'real'}
-            onChange={(event) => setMode(event.target.checked ? 'real' : 'dummy')}
-          />
-          실제 RSS로 수집
-        </label>
-        <label className="muted" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          언어
-          <select value={locale} onChange={(event) => setLocale(event.target.value as 'ko' | 'en' | 'all')}>
-            <option value="ko">국내</option>
-            <option value="en">해외</option>
-            <option value="all">전체</option>
-          </select>
-        </label>
-        <label className="muted" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input type="checkbox" checked={usePreset} onChange={(event) => setUsePreset(event.target.checked)} />
-          프리셋 사용
-        </label>
-        <label className="muted" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="checkbox"
-            checked={includeSeen}
-            onChange={(event) => setIncludeSeen(event.target.checked)}
-          />
-          이전에 본 글도 포함
-        </label>
-        <label className="muted" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="checkbox"
-            checked={htmlFallback}
-            onChange={(event) => setHtmlFallback(event.target.checked)}
-          />
-          HTML fallback 사용
-        </label>
-        <label className="muted" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          기간
-          <select
-            value={String(lookbackDays)}
-            onChange={(event) => setLookbackDays(Number(event.target.value))}
-          >
-            <option value="1">당일</option>
-            <option value="7">일주일</option>
-            <option value="30">한달</option>
-            <option value="180">6개월</option>
-          </select>
-        </label>
-      </div>
-
-      {usePreset ? (
-        <div className="input-grid" style={{ marginTop: 12 }}>
-          <label>
-            프리셋 선택
-            <select value={presetId} onChange={(event) => setPresetId(event.target.value)}>
-              {presets.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.name} ({preset.sourceCount ?? 0})
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
-      ) : (
-        <div className="section" style={{ marginTop: 12 }}>
-          <h2>소스 직접 선택</h2>
-          <div className="input-grid">
-            <label>
-              검색
+
+        <div style={{ marginTop: 16 }}>
+          <button type="button" className="secondary" onClick={() => setShowAdvanced((prev) => !prev)}>
+            고급 설정 {showAdvanced ? '접기' : '펼치기'}
+          </button>
+        </div>
+
+        {showAdvanced && (
+          <div className="actions" style={{ marginTop: 12 }}>
+            <label className="muted" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input
-                value={sourceQuery}
-                onChange={(event) => setSourceQuery(event.target.value)}
-                placeholder="키워드 또는 URL"
+                type="checkbox"
+                checked={mode === 'real'}
+                onChange={(event) => setMode(event.target.checked ? 'real' : 'dummy')}
               />
+              실제 RSS로 수집
             </label>
-            <label>
-              선택된 소스
-              <div className="muted" style={{ paddingTop: 10 }}>
-                {selectedSourceIds.size} / 50
-              </div>
+            <label className="muted" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              언어
+              <select value={locale} onChange={(event) => setLocale(event.target.value as 'ko' | 'en' | 'all')}>
+                <option value="ko">국내</option>
+                <option value="en">해외</option>
+                <option value="all">전체</option>
+              </select>
             </label>
+            <label className="muted" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={includeSeen}
+                onChange={(event) => setIncludeSeen(event.target.checked)}
+              />
+              이전에 본 글도 포함
+            </label>
+            <label className="muted" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={htmlFallback}
+                onChange={(event) => setHtmlFallback(event.target.checked)}
+              />
+              HTML fallback 사용
+            </label>
+            <span className="muted" style={{ fontSize: 12 }}>
+              RSS가 막히거나 비어있을 때만 도움이 됩니다.
+            </span>
           </div>
-          <div className="list" style={{ marginTop: 12, maxHeight: 320, overflow: 'auto' }}>
-            {sources.length === 0 && <div className="muted">표시할 소스가 없습니다.</div>}
-            {sources.map((source) => (
-              <label key={source.id} className="card">
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedSourceIds.has(source.id)}
-                    onChange={() => toggleSourceSelection(source.id)}
-                  />
-                  <div>
-                    <strong>{source.name}</strong>
-                    <div className="muted">{source.key}</div>
-                    <div className="muted">
-                      {source.categoryDefault} · {source.locale} · {source.enabled ? '활성' : '비활성'}
-                    </div>
-                  </div>
-                </div>
-              </label>
-            ))}
-          </div>
+        )}
+      </section>
+
+      <section className="section" style={{ marginTop: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0 }}>Step 2. 실행</h3>
+          {runId && <span className="muted">runId: {runId}</span>}
         </div>
-      )}
+        <div className="actions" style={{ marginTop: 12 }}>
+          <button type="button" onClick={runFetch} disabled={loading || polling}>
+            {loading || polling ? '수집 중...' : '수집 실행'}
+          </button>
+        </div>
+        {runStatus?.status === 'running' && (
+          <div className="muted" style={{ marginTop: 8 }}>
+            실행 중… sourceReports {runStatus.sources?.length ?? 0}건 수신
+          </div>
+        )}
+        {runStatus?.status === 'failed' && (
+          <div className="notice" style={{ marginTop: 8 }}>
+            실행에 실패했습니다. 설정을 조정하거나 다시 실행해 주세요.
+          </div>
+        )}
+      </section>
 
-      {runId && <p className="muted">실행 ID: {runId}</p>}
-      {message && <div className="notice">{message}</div>}
-      {runStatus?.status === 'failed' && (
-        <div className="notice">수집에 실패했습니다. 소스 상태를 확인해주세요.</div>
-      )}
-      {runStatus?.error && <div className="notice">에러: {runStatus.error}</div>}
-
-      {runStatus?.sources && runStatus.sources.length > 0 && (
-        <section className="section" style={{ marginTop: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ margin: 0 }}>소스 상태</h2>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setShowSourceStatus((prev) => !prev)}
-            >
-              {showSourceStatus ? '접기' : '펼치기'}
+      <section ref={step3Ref} className="section" style={{ marginTop: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0 }}>Step 3. 검토 & 저장</h3>
+          <div className="actions">
+            <button type="button" className="secondary" onClick={selectAll} disabled={sortedItems.length === 0}>
+              전체 선택
+            </button>
+            <button type="button" className="secondary" onClick={clearSelection} disabled={selectedCount === 0}>
+              선택 해제
+            </button>
+            <button type="button" onClick={saveSelected} disabled={loading || selectedCount === 0}>
+              선택 저장 ({selectedCount})
             </button>
           </div>
-          {showSourceStatus && (
-            <div className="list" style={{ marginTop: 12 }}>
-              {runStatus.sources.map((source) => {
-                const statusLabel =
-                  source.status === 200
-                    ? '성공'
-                    : source.status === 304
-                      ? '변경 없음'
-                      : '실패';
-                return (
-                  <div key={source.sourceId} className="card">
-                    <strong>{source.name}</strong>
-                    <div className="muted">
-                      상태: {statusLabel} ({source.status}) · 수집: {source.fetchedCount}
-                    </div>
-                    <div className="muted" style={{ fontSize: 12 }}>
-                      {source.hostname ?? 'unknown'} · {source.latencyMs ?? '-'}ms · 도메인 동시성{' '}
-                      {source.domainConcurrencyApplied ?? '-'}
-                    </div>
-                    {source.error && <div className="muted">오류: {source.error}</div>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      )}
+        </div>
 
-      <div className="list" style={{ marginTop: 20 }}>
-        {flatItems.length === 0 && <div className="muted">아직 아이템이 없습니다.</div>}
-        {categories.map((category) => {
-          const items = itemsByCategory[category] ?? [];
-          if (items.length === 0) return null;
-          return (
-            <section key={category} className="section" style={{ marginBottom: 16 }}>
-              <h2>{category}</h2>
-              <div className="list">
-                {items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="card"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => openPreview(item)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        openPreview(item);
-                      }
-                    }}
-                  >
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(item.id)}
-                        onChange={() => toggleSelection(item.id)}
-                        onClick={(event) => event.stopPropagation()}
-                      />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                          <strong className="clamp-2">{item.title}</strong>
-                          <div className="badges" style={{ justifyContent: 'flex-end' }}>
-                            <span className="badge badge-date">{formatDate(item.publishedAt)}</span>
-                            {item.sourceName && <span className="badge badge-source">{item.sourceName}</span>}
-                          </div>
+        <div className="card" style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div className="muted">총 결과: {totalItems}개</div>
+            <div className="muted">성공: {sourceSuccess} · 실패: {sourceFailures} · 304: {sourceNotModified}</div>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <button type="button" className="secondary" onClick={() => setShowSourceStatus((prev) => !prev)}>
+              실패 소스 보기 {showSourceStatus ? '접기' : '펼치기'}
+            </button>
+          </div>
+        </div>
+
+        {showSourceStatus && runStatus?.sources && runStatus.sources.length > 0 && (
+          <div className="list" style={{ marginTop: 12 }}>
+            {runStatus.sources.map((source) => {
+              const statusLabel =
+                source.status === 200 ? '성공' : source.status === 304 ? '변경 없음' : '실패';
+              return (
+                <div key={source.sourceId} className="card">
+                  <strong>{source.name}</strong>
+                  <div className="muted">
+                    상태: {statusLabel} ({source.status}) · 수집: {source.fetchedCount}
+                  </div>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {source.hostname ?? 'unknown'} · {source.latencyMs ?? '-'}ms · 도메인 동시성{' '}
+                    {source.domainConcurrencyApplied ?? '-'}
+                  </div>
+                  {source.error && <div className="muted">오류: {source.error}</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {sortedItems.length === 0 ? (
+          <div className="card" style={{ marginTop: 12 }}>
+            <strong>결과가 0개입니다.</strong>
+            <div className="muted" style={{ marginTop: 6 }}>
+              {emptyReasons.length > 0 ? emptyReasons.join(' / ') : '수집 결과가 없습니다.'}
+            </div>
+            <div className="actions" style={{ marginTop: 12 }}>
+              {lookbackDays < 30 && (
+                <button type="button" className="secondary" onClick={() => setLookbackDays(30)}>
+                  기간 30일로 늘리기
+                </button>
+              )}
+              {lookbackDays < 180 && (
+                <button type="button" className="secondary" onClick={() => setLookbackDays(180)}>
+                  기간 6개월로 늘리기
+                </button>
+              )}
+              {!includeSeen && (
+                <button type="button" className="secondary" onClick={() => setIncludeSeen(true)}>
+                  이전 글 포함 켜기
+                </button>
+              )}
+              {!htmlFallback && (
+                <button type="button" className="secondary" onClick={() => setHtmlFallback(true)}>
+                  HTML fallback 켜기
+                </button>
+              )}
+              <button type="button" className="secondary" onClick={() => setShowSourceStatus(true)}>
+                소스 상태 보기
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="list" style={{ marginTop: 12 }}>
+            {sortedItems.map((item) => {
+              const signals = item.signals ?? [];
+              const visibleSignals = signals.slice(0, 3);
+              const extraCount = Math.max(0, signals.length - visibleSignals.length);
+              return (
+                <div
+                  key={item.id}
+                  className="card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openPreview(item)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      openPreview(item);
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(item.id)}
+                      onChange={() => toggleSelection(item.id)}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                        <strong className="clamp-1">{item.title}</strong>
+                        <div className="badges" style={{ justifyContent: 'flex-end' }}>
+                          <span className="badge badge-date">{formatDate(item.publishedAt)}</span>
+                          <span className="badge badge-source">{getDomain(item.url)}</span>
                         </div>
-                        <div className="muted">{item.url}</div>
-                        {item.snippet && <div className="muted clamp-3">{item.snippet}</div>}
-                        {item.contentTypeHint && (
-                          <div className="badges">
-                            <span className="badge">{item.contentTypeHint}</span>
-                          </div>
-                        )}
-                        {item.signals?.length ? (
-                          <div className="badges">
-                            {item.signals.map((signal) => (
-                              <span key={signal} className="badge">
-                                {signal}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
+                      </div>
+                      <div className="badges" style={{ marginTop: 6 }}>
+                        {item.contentTypeHint && <span className="badge">{item.contentTypeHint}</span>}
+                        {visibleSignals.map((signal) => (
+                          <span key={signal} className="badge">
+                            {signal}
+                          </span>
+                        ))}
+                        {extraCount > 0 && <span className="badge">+{extraCount}</span>}
+                      </div>
+                      <div className="muted clamp-2" style={{ marginTop: 6 }}>
+                        {getPreviewText(item)}
+                      </div>
+                      <div className="actions" style={{ marginTop: 8 }}>
+                        <a href={item.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+                          원문
+                        </a>
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </section>
-          );
-        })}
-      </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {previewItem && (
         <div
@@ -679,11 +781,9 @@ export default function FetchPage() {
                 </a>
               </div>
             </div>
-            {previewItem.snippet && (
-              <div className="muted" style={{ maxHeight: 240, overflow: 'auto' }}>
-                {previewItem.snippet}
-              </div>
-            )}
+            <div className="muted" style={{ maxHeight: 240, overflow: 'auto' }}>
+              {getPreviewText(previewItem)}
+            </div>
             <div className="badges">
               <span className="badge">
                 {categoryLabels[previewItem.category as Category] ?? previewItem.category}
@@ -696,15 +796,8 @@ export default function FetchPage() {
               ))}
             </div>
             <div className="actions" style={{ justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => toggleSelection(previewItem.id)}
-              >
-                {selectedIds.has(previewItem.id) ? '선택 해제' : '선택하기'}
-              </button>
-              <button type="button" onClick={saveSelected} disabled={selectedIds.size === 0}>
-                선택 저장
+              <button type="button" onClick={savePreview} disabled={loading}>
+                저장
               </button>
             </div>
           </div>

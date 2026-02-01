@@ -1,7 +1,9 @@
 'use client';
 
-import { useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { getDomain } from '../../../shared/lib/url';
+import { PostBadges } from '../../../entities/post';
 
 type Post = {
   id: string;
@@ -11,28 +13,52 @@ type Post = {
   publishedAt: string;
   savedAt?: string;
   summaryTldr: string;
-  summaryPoints?: string[];
   signals: string[];
   contentType?: string | null;
-  tags?: string[];
+  status?: string | null;
+  collection?: string | null;
+  pinned?: boolean | null;
 };
 
 type Props = {
   posts: Post[];
   selectedIds: Set<string>;
-  toggleSelection: (id: string) => void;
+  selectedPostId: string | null;
+  onToggleSelect: (id: string) => void;
+  onSelectPost: (id: string) => void;
   highlightParts: (text: string) => string[];
-  categoryLabels: Record<string, string>;
+  onEndReached?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
 };
 
-export default function PostList({ posts, selectedIds, toggleSelection, highlightParts, categoryLabels }: Props) {
+export default function PostList({
+  posts,
+  selectedIds,
+  selectedPostId,
+  onToggleSelect,
+  onSelectPost,
+  highlightParts,
+  onEndReached,
+  hasMore,
+  loadingMore
+}: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
     count: posts.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 190,
+    estimateSize: () => 180,
+    measureElement: (el) => (el ? el.getBoundingClientRect().height : 180),
     overscan: 8
   });
+
+  const handleScroll = useCallback(() => {
+    if (!parentRef.current || !hasMore || loadingMore) return;
+    const { scrollTop, scrollHeight, clientHeight } = parentRef.current;
+    if (scrollHeight - scrollTop - clientHeight < 220) {
+      onEndReached?.();
+    }
+  }, [hasMore, loadingMore, onEndReached]);
 
   if (posts.length === 0) {
     return <div className="muted">저장된 항목이 없습니다.</div>;
@@ -41,16 +67,24 @@ export default function PostList({ posts, selectedIds, toggleSelection, highligh
   return (
     <div
       ref={parentRef}
-      className="list"
-      style={{ marginTop: 12, maxHeight: '70vh', overflow: 'auto', position: 'relative' }}
+      className="posts-list"
+      style={{ marginTop: 8 }}
+      onScroll={handleScroll}
     >
       <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
         {rowVirtualizer.getVirtualItems().map((row) => {
           const post = posts[row.index];
           if (!post) return null;
+          const isActive = selectedPostId === post.id;
+          const isPinned = Boolean(post.pinned);
+          const domain = getDomain(post.url);
+          const dateLabel = new Date(post.savedAt ?? post.publishedAt).toLocaleDateString();
           return (
             <div
               key={post.id}
+              ref={rowVirtualizer.measureElement}
+              data-index={row.index}
+              className="post-row-wrap"
               style={{
                 position: 'absolute',
                 top: 0,
@@ -59,98 +93,44 @@ export default function PostList({ posts, selectedIds, toggleSelection, highligh
                 transform: `translateY(${row.start}px)`
               }}
             >
-              <article className="card compact">
-                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(post.id)}
-                    onChange={() => toggleSelection(post.id)}
-                  />
-                  <div>
-                    <a href={`/posts/${post.id}`}>
-                      <strong>
-                        {highlightParts(post.title).map((part, index) =>
-                          index % 2 === 1 ? (
-                            <mark key={`${part}-${index}`} className="highlight">
-                              {part}
-                            </mark>
-                          ) : (
-                            <span key={`${part}-${index}`}>{part}</span>
-                          )
-                        )}
-                      </strong>
-                    </a>
-                    <div className="muted clamp-1">
-                      {highlightParts(post.url).map((part, index) =>
+              <article
+                className={`post-row ${isActive ? 'active' : ''}`}
+                onClick={() => onSelectPost(post.id)}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(post.id)}
+                  onChange={() => onToggleSelect(post.id)}
+                  onClick={(event) => event.stopPropagation()}
+                />
+                <div className="post-row-main">
+                  <div className="post-row-top">
+                    <strong className="clamp-2 post-row-title" title={post.title}>
+                      {isPinned && <span style={{ marginRight: 6 }}>⭐</span>}
+                      {highlightParts(post.title).map((part, index) =>
                         index % 2 === 1 ? (
-                          <mark key={`${part}-${index}`} className="highlight">
+                          <mark key={`${post.id}-title-${index}`} className="highlight">
                             {part}
                           </mark>
                         ) : (
-                          <span key={`${part}-${index}`}>{part}</span>
+                          <span key={`${post.id}-title-${index}`}>{part}</span>
                         )
                       )}
+                    </strong>
+                    <div className="post-row-meta">
+                      <span className="meta-pill">{domain}</span>
+                      <span className="meta-pill">{dateLabel}</span>
                     </div>
-                    <div className="muted">{new Date(post.publishedAt).toLocaleString()}</div>
-                    <div className="badges">
-                      <span className="badge">{categoryLabels[post.category] ?? post.category}</span>
-                      {post.contentType && <span className="badge">{post.contentType}</span>}
-                      {post.signals?.map((signal) => (
-                        <span key={signal} className="badge">
-                          {signal}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="summary">
-                      {post.summaryPoints && post.summaryPoints.length > 0 ? (
-                        <ul className="muted" style={{ margin: '6px 0 0 18px' }}>
-                          {post.summaryPoints.slice(0, 3).map((point, index) => (
-                            <li key={`${post.id}-point-${index}`}>
-                              {highlightParts(point).map((part, partIndex) =>
-                                partIndex % 2 === 1 ? (
-                                  <mark key={`${part}-${partIndex}`} className="highlight">
-                                    {part}
-                                  </mark>
-                                ) : (
-                                  <span key={`${part}-${partIndex}`}>{part}</span>
-                                )
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="muted clamp-2">
-                          {highlightParts(post.summaryTldr).map((part, index) =>
-                            index % 2 === 1 ? (
-                              <mark key={`${part}-${index}`} className="highlight">
-                                {part}
-                              </mark>
-                            ) : (
-                              <span key={`${part}-${index}`}>{part}</span>
-                            )
-                          )}
-                        </p>
-                      )}
-                    </div>
-                    <div className="actions" style={{ marginTop: 6 }}>
-                      <a
-                        href={`/posts/${post.id}`}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '6px 12px',
-                          borderRadius: 999,
-                          background: 'var(--accent)',
-                          color: '#fff',
-                          fontSize: 12,
-                          fontWeight: 600
-                        }}
-                      >
-                        자세히 보기
-                        <span aria-hidden="true">→</span>
-                      </a>
-                    </div>
+                  </div>
+                  <div className="post-row-badges badges">
+                    <PostBadges
+                      category={post.category}
+                      status={post.status}
+                      collection={post.collection}
+                      pinned={post.pinned}
+                      contentType={post.contentType}
+                      signals={post.signals ?? []}
+                    />
                   </div>
                 </div>
               </article>
@@ -158,6 +138,7 @@ export default function PostList({ posts, selectedIds, toggleSelection, highligh
           );
         })}
       </div>
+      {loadingMore && <div className="muted" style={{ padding: 12 }}>추가 불러오는 중...</div>}
     </div>
   );
 }

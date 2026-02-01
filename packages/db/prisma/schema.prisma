@@ -133,6 +133,9 @@ model Post {
   sourceId      String?
   contentType   String   @default("OTHER")
   summaryTemplateVersion String @default("free-v2")
+  collection   String?
+  status       String   @default("inbox")
+  pinned       Boolean  @default(false)
   title         String
   url           String   @unique
   publishedAt   DateTime

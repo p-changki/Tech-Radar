@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { apiFetch } from '../../../lib/api';
-
-const CONTENT_TYPES = ['RELEASE_NOTE', 'COMPANY_BLOG', 'NEWS', 'OTHER'] as const;
+import { CONTENT_TYPES } from '../../../shared/constants/categories';
 
 type Post = {
   id: string;

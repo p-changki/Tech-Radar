@@ -6,13 +6,15 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "test": "vitest run"
+    "test": "tsx src/smoke.ts",
+    "test:unit": "tsx src/index.test.ts"
   },
   "dependencies": {
     "@tech-radar/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.12.7",
-    "vitest": "^1.6.0"
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.9"
   }
 }
