@@ -1,4 +1,6 @@
-# Tech Radar (Local-first Developer Update Inbox)
+# Tech Radar (Local-first Develope
+<img width="1000" height="1287" alt="스크린샷 2026-02-02 06 44 34" src="https://github.com/user-attachments/assets/7b4ed94b-806d-4460-af21-0b3f7ec8a72b" />
+r Update Inbox)
 
 [![CI](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml/badge.svg)](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
