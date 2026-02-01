@@ -1,0 +1,23 @@
+{
+  "name": "@tech-radar/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "echo 'worker build placeholder'",
+    "lint": "echo 'no lint yet'",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tech-radar/connectors": "workspace:*",
+    "@tech-radar/db": "workspace:*",
+    "@tech-radar/shared": "workspace:*",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "tsx": "^4.7.0",
+    "typescript": "^5.9.0"
+  }
+}

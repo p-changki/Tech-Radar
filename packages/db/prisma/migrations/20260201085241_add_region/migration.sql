@@ -1,0 +1,2 @@
+-- This migration has been superseded by 20260201170500_add_source_cache.
+-- Intentionally left blank so that schema can be rebuilt cleanly from scratch.

@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Category {
+  AI
+  FE
+  BE
+  DEVOPS
+  DATA
+  SECURITY
+  OTHER
+}
+
+enum SourceType {
+  rss
+  github
+  npm
+  pypi
+}
+
+enum RuleType {
+  domain
+  keyword
+  source
+}
+
+enum RuleAction {
+  mute
+  boost
+}
+
+enum FetchRunStatus {
+  running
+  success
+  failed
+}
+
+enum FetchJobStatus {
+  queued
+  running
+  success
+  failed
+}
+
+model Source {
+  id                   String          @id @default(cuid())
+  type                 SourceType
+  name                 String
+  key                  String          @unique
+  categoryDefault      Category
+  weight               Float           @default(1.0)
+  enabled              Boolean         @default(false)
+  locale               String          @default("en")
+  tags                 Json?
+  etag                 String?
+  lastModified         String?
+  lastFetchedAt        DateTime?
+  lastStatus           Int?
+  lastError            String?
+  consecutiveFailures  Int             @default(0)
+  fetchedItems         FetchedItem[]
+  posts                Post[]
+  presetSources        PresetSource[]
+
+  @@index([enabled, locale, categoryDefault])
+}
+
+model Rule {
+  id       String     @id @default(cuid())
+  type     RuleType
+  pattern  String
+  action   RuleAction
+  weight   Float      @default(1.0)
+  enabled  Boolean    @default(true)
+}
+
+model FetchRun {
+  id           String         @id @default(cuid())
+  requestedAt  DateTime       @default(now())
+  status       FetchRunStatus @default(running)
+  params       Json
+  result       Json?
+  durationMs   Int?
+  error        String?
+  fetchedItems FetchedItem[]
+  job          FetchJob?
+}
+
+model FetchJob {
+  id          String          @id @default(cuid())
+  runId       String          @unique
+  status      FetchJobStatus  @default(queued)
+  lockedAt    DateTime?
+  attempts    Int             @default(0)
+  maxAttempts Int             @default(2)
+  error       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  run FetchRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+}
+
+model FetchedItem {
+  id          String   @id @default(cuid())
+  runId       String
+  category    Category
+  sourceId    String?
+  contentTypeHint String?
+  title       String
+  url         String   @unique
+  publishedAt DateTime
+  snippet     String?
+  signals     Json
+  score       Float
+  raw         Json?
+  createdAt   DateTime @default(now())
+
+  run    FetchRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  source Source?  @relation(fields: [sourceId], references: [id])
+
+  @@index([runId, category, publishedAt])
+}
+
+model Post {
+  id            String   @id @default(cuid())
+  category      Category
+  sourceId      String?
+  contentType   String   @default("OTHER")
+  summaryTemplateVersion String @default("free-v2")
+  title         String
+  url           String   @unique
+  publishedAt   DateTime
+  summaryTldr   String
+  summaryPoints Json
+  signals       Json
+  whyItMatters  String
+  summaryMeta   Json?
+  tags          Json
+  notes         String?
+  savedAt       DateTime @default(now())
+  rawSnapshot   Json?
+
+  source Source? @relation(fields: [sourceId], references: [id])
+
+  @@index([category, savedAt])
+}
+
+model Preset {
+  id           String          @id @default(cuid())
+  name         String
+  description  String?
+  isDefault    Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+  presetSources PresetSource[]
+}
+
+model PresetSource {
+  presetId String
+  sourceId String
+  createdAt DateTime @default(now())
+
+  preset Preset @relation(fields: [presetId], references: [id], onDelete: Cascade)
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@id([presetId, sourceId])
+}
+
+model DomainStat {
+  id                 String   @id @default(cuid())
+  hostname           String   @unique
+  lastUpdatedAt      DateTime @default(now())
+  windowSize         Int      @default(10)
+  samples            Json
+  avgLatencyMs       Int      @default(0)
+  failRate           Float    @default(0)
+  consecutiveFailures Int     @default(0)
+}

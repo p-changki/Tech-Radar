@@ -1,0 +1,27 @@
+{
+  "name": "tech-radar",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "verify": "pnpm -w type-check && pnpm -w lint && pnpm -w db:generate && pnpm --filter @tech-radar/summarizer test",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "db:logs": "docker logs -f tech-radar-db",
+    "db:migrate": "pnpm --filter @tech-radar/db prisma migrate dev",
+    "db:generate": "pnpm --filter @tech-radar/db prisma generate",
+    "db:seed": "pnpm --filter @tech-radar/db prisma db seed",
+    "db:studio": "pnpm --filter @tech-radar/db prisma studio",
+    "cleanup": "pnpm --filter @tech-radar/api tsx scripts/cleanup.ts",
+    "cleanup:dry": "pnpm --filter @tech-radar/api tsx scripts/cleanup.ts --dry-run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "turbo": "^2.8.0"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@tech-radar/summarizer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tech-radar/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "vitest": "^1.6.0"
+  }
+}

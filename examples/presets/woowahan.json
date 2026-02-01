@@ -1,0 +1,20 @@
+{
+  "version": "preset-v1",
+  "exportedAt": "2026-02-01T15:04:22.000Z",
+  "preset": {
+    "name": "Woowahan Tech (Example)",
+    "description": "Example preset with a single public RSS feed (disabled by default)."
+  },
+  "sources": [
+    {
+      "key": "https://techblog.woowahan.com/feed/",
+      "name": "우아한형제들 기술블로그",
+      "type": "rss",
+      "categoryDefault": "BE",
+      "locale": "ko",
+      "enabled": false,
+      "weight": 1.2,
+      "tags": ["korea", "company", "example"]
+    }
+  ]
+}

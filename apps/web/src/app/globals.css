@@ -1,0 +1,297 @@
+:root {
+  color-scheme: light;
+  --bg-start: #f4f1ff;
+  --bg-end: #fef6e6;
+  --ink: #1c1b22;
+  --muted: #5d5a6f;
+  --accent: #2c7ef7;
+  --accent-soft: rgba(44, 126, 247, 0.12);
+  --card: #ffffff;
+  --border: rgba(28, 27, 34, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Space Grotesk", "IBM Plex Sans", "Helvetica Neue", sans-serif;
+  color: var(--ink);
+  background: radial-gradient(circle at top left, var(--bg-start), transparent 55%),
+    radial-gradient(circle at bottom right, var(--bg-end), transparent 55%),
+    #f8f7fb;
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+main {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+nav {
+  display: flex;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+nav a {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+nav a:hover {
+  border-color: var(--border);
+  background: var(--accent-soft);
+}
+
+.section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 16px 40px rgba(28, 27, 34, 0.08);
+  margin-bottom: 20px;
+}
+
+.section h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+
+.input-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.input-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+input,
+select,
+button,
+textarea {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+button {
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(44, 126, 247, 0.2);
+}
+
+button.secondary {
+  background: #1c1b22;
+}
+
+.list {
+  display: grid;
+  gap: 12px;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+  background: #ffffff;
+}
+
+.badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid rgba(44, 126, 247, 0.3);
+}
+
+.badge-date {
+  background: rgba(28, 27, 34, 0.08);
+  color: var(--ink);
+  border-color: rgba(28, 27, 34, 0.2);
+}
+
+.badge-source {
+  background: rgba(46, 164, 79, 0.12);
+  color: #1b6b34;
+  border-color: rgba(46, 164, 79, 0.35);
+}
+
+.badge-active {
+  background: rgba(46, 164, 79, 0.12);
+  color: #1b6b34;
+  border-color: rgba(46, 164, 79, 0.35);
+}
+
+.badge-inactive {
+  background: rgba(28, 27, 34, 0.08);
+  color: #4f4c5b;
+  border-color: rgba(28, 27, 34, 0.2);
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.14);
+  color: #8a4b00;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.badge-danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: #9b1c1c;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.toggle input {
+  display: none;
+}
+
+.toggle-track {
+  width: 38px;
+  height: 20px;
+  background: rgba(28, 27, 34, 0.16);
+  border-radius: 999px;
+  position: relative;
+  transition: background 0.2s ease;
+}
+
+.toggle-thumb {
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  box-shadow: 0 4px 10px rgba(28, 27, 34, 0.15);
+  transition: transform 0.2s ease;
+}
+
+.toggle input:checked + .toggle-track {
+  background: rgba(46, 164, 79, 0.5);
+}
+
+.toggle input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(18px);
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.notice {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(28, 27, 34, 0.06);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.card.compact {
+  max-height: 220px;
+  overflow: hidden;
+  transition: max-height 0.2s ease;
+}
+
+.card.compact .summary {
+  max-height: 4.5em;
+  overflow: hidden;
+  transition: max-height 0.2s ease;
+}
+
+.card.compact.expanded {
+  max-height: none;
+}
+
+.card.compact.expanded .summary {
+  max-height: none;
+}
+
+.highlight {
+  background: rgba(44, 126, 247, 0.2);
+  color: inherit;
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
+.clamp-1,
+.clamp-2,
+.clamp-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.clamp-1 {
+  -webkit-line-clamp: 1;
+}
+
+.clamp-2 {
+  -webkit-line-clamp: 2;
+}
+
+.clamp-3 {
+  -webkit-line-clamp: 3;
+}

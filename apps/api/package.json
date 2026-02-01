@@ -1,0 +1,28 @@
+{
+  "name": "@tech-radar/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "echo 'no build yet'",
+    "lint": "echo 'no lint yet'",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cors": "^8.0.0",
+    "@fastify/multipart": "^8.3.1",
+    "@tech-radar/connectors": "workspace:*",
+    "@tech-radar/db": "workspace:*",
+    "@tech-radar/shared": "workspace:*",
+    "@tech-radar/summarizer": "workspace:*",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.26.2",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "tsx": "^4.7.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "prisma.pinToPrisma6": false,
+  "prisma.enableDiagnostics": false,
+  "prisma.schemaPath": "packages/db/prisma/schema.prisma"
+}
