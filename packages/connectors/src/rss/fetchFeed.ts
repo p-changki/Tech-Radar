@@ -1,3 +1,6 @@
+import { request } from 'undici';
+import { httpAgent } from '../shared/httpAgent.js';
+
 export type FetchFeedInput = {
   url: string;
   etag?: string | null;
@@ -33,27 +36,31 @@ async function fetchOnce(input: FetchFeedInput, timeoutMs: number): Promise<Fetc
     if (input.etag) headers['If-None-Match'] = input.etag;
     if (input.lastModified) headers['If-Modified-Since'] = input.lastModified;
 
-    const response = await fetch(input.url, {
+    const { statusCode, headers: resHeaders, body } = await request(input.url, {
+      method: 'GET',
       headers,
       signal: controller.signal,
-      redirect: 'follow'
+      dispatcher: httpAgent
     });
 
-    const status = response.status;
-    const etag = response.headers.get('etag');
-    const lastModified = response.headers.get('last-modified');
-    const finalUrl = response.url || input.url;
-    const contentType = response.headers.get('content-type');
+    const status = statusCode;
+    const etagHeader = resHeaders.etag;
+    const lastModifiedHeader = resHeaders['last-modified'];
+    const contentTypeHeader = resHeaders['content-type'];
+    const etag = Array.isArray(etagHeader) ? etagHeader[0] : etagHeader ?? null;
+    const lastModified = Array.isArray(lastModifiedHeader) ? lastModifiedHeader[0] : lastModifiedHeader ?? null;
+    const contentType = Array.isArray(contentTypeHeader) ? contentTypeHeader[0] : contentTypeHeader ?? null;
+    const finalUrl = input.url;
 
     if (status === 304) {
       return { status, etag, lastModified, finalUrl, contentType };
     }
 
-    if (!response.ok) {
+    if (status < 200 || status >= 300) {
       return { status, etag, lastModified, finalUrl, contentType, error: `HTTP ${status}` };
     }
 
-    const text = await response.text();
+    const text = await body.text();
     return { status, etag, lastModified, text, finalUrl, contentType };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'fetch failed';

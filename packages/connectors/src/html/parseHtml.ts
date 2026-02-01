@@ -33,7 +33,8 @@ const parseDateFromText = (value: string | null | undefined) => {
   const text = value.trim();
   if (!text) return null;
   const normalized = text.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ');
-  const monthMatch = normalized.match(DATE_PATTERNS[1]);
+  const monthPattern = DATE_PATTERNS[1];
+  const monthMatch = monthPattern ? normalized.match(monthPattern) : null;
   if (monthMatch) {
     const monthMap: Record<string, number> = {
       jan: 1,

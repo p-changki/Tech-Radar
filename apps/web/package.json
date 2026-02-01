@@ -11,6 +11,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.13.18",
     "@tech-radar/shared": "workspace:*",
     "next": "^15.0.0",
     "react": "^19.0.0",

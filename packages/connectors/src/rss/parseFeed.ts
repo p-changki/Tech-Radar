@@ -23,10 +23,12 @@ export async function parseFeed(text: string): Promise<ParsedFeedItem[]> {
     .map((item) => {
       const link = item.link || item.guid || '';
       const title = item.title || item.pubDate || 'Untitled';
-      const categories = Array.isArray(item.categories)
-        ? item.categories.filter((value) => typeof value === 'string')
-        : typeof item.category === 'string'
-          ? [item.category]
+      const rawCategories = (item as { categories?: unknown; category?: unknown }).categories;
+      const rawCategory = (item as { category?: unknown }).category;
+      const categories = Array.isArray(rawCategories)
+        ? rawCategories.filter((value) => typeof value === 'string')
+        : typeof rawCategory === 'string'
+          ? [rawCategory]
           : [];
       const snippet =
         (item as { summary?: string }).summary ||
